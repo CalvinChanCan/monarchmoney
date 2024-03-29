@@ -8,6 +8,8 @@ import pickle
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum, auto
+from typing import Any, Dict, List, Optional, Union, Tuple
 from io import StringIO
 from typing import Any, Dict, List, Optional, Union
 
@@ -33,6 +35,13 @@ class BalanceHistoryRow:
     date: datetime
     amount: float
     account_name: Optional[str] = None
+
+
+class AmountFilterType(Enum):
+    EQUAL = auto()
+    LESS_THAN = auto()
+    GREATER_THAN = auto()
+    BETWEEN = auto()
 
 
 class MonarchMoneyEndpoints(object):
@@ -1185,6 +1194,9 @@ class MonarchMoney(object):
         is_recurring: Optional[bool] = None,
         imported_from_mint: Optional[bool] = None,
         synced_from_institution: Optional[bool] = None,
+        amount_filter: Optional[
+            Tuple[AmountFilterType, Union[float, Tuple[float, float]]]
+        ] = None,
     ) -> Dict[str, Any]:
         """
         Gets transaction data from the account.
@@ -1204,6 +1216,7 @@ class MonarchMoney(object):
         :param is_recurring: a bool to filter for whether the transactions are recurring.
         :param imported_from_mint: a bool to filter for whether the transactions were imported from mint.
         :param synced_from_institution: a bool to filter for whether the transactions were synced from an institution.
+        :param amount_filter: a tuple containing an AmountFilterType enum value and the amount or range of amounts to filter by.
         """
 
         query = gql(
@@ -1317,6 +1330,20 @@ class MonarchMoney(object):
             raise Exception(
                 "You must specify both a startDate and endDate, not just one of them."
             )
+
+        if amount_filter:
+            filter_type, amount_value = amount_filter
+            if filter_type == AmountFilterType.EQUAL:
+                variables["filters"]["absAmountGte"] = amount_value
+                variables["filters"]["absAmountLte"] = amount_value
+            elif filter_type == AmountFilterType.LESS_THAN:
+                variables["filters"]["absAmountLte"] = amount_value
+            elif filter_type == AmountFilterType.GREATER_THAN:
+                variables["filters"]["absAmountGte"] = amount_value
+            elif filter_type == AmountFilterType.BETWEEN:
+                min_amount, max_amount = amount_value
+                variables["filters"]["absAmountGte"] = min_amount
+                variables["filters"]["absAmountLte"] = max_amount
 
         return await self.gql_call(
             operation="GetTransactionsList", graphql_query=query, variables=variables

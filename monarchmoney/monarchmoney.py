@@ -1299,6 +1299,62 @@ class MonarchMoney(object):
             operation="GetTransactionsList", graphql_query=query, variables=variables
         )
 
+    async def select_transaction(
+        self,
+        transaction_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Gets transaction data from the account.
+
+        :param transaction_id: the transaction id to select.
+        """
+
+        query = gql(
+            """
+            query Web_GoalSelectTransaction($transactionId: UUID!) {
+                getTransaction(id: $transactionId) {
+                    id
+                    account {
+                        id
+                        goalAllocations {
+                            id
+                            goal {
+                                id
+                                name
+                                imageStorageProvider
+                                imageStorageProviderId
+                                priority
+                                archivedAt
+                                __typename
+                            }
+                            __typename
+                        }
+                        __typename
+                    }
+                    goal {
+                        id
+                        name
+                        imageStorageProvider
+                        imageStorageProviderId
+                        __typename
+                    }
+                    pending
+                    __typename
+                }
+            }
+          """
+        )
+
+        variables = {
+            "transactionId": transaction_id,
+        }
+
+        return await self.gql_call(
+            operation="Web_GoalSelectTransaction",
+            graphql_query=query,
+            variables=variables,
+        )
+
     async def create_transaction(
         self,
         date: str,

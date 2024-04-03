@@ -1357,21 +1357,9 @@ class MonarchMoney(object):
         """
         Gets transaction data from the account.
 
-        :param limit: the maximum number of transactions to download, defaults to DEFAULT_RECORD_LIMIT.
-        :param offset: the number of transactions to skip (offset) before retrieving results.
-        :param start_date: the earliest date to get transactions from, in "yyyy-mm-dd" format.
-        :param end_date: the latest date to get transactions from, in "yyyy-mm-dd" format.
-        :param search: a string to filter transactions. use empty string for all results.
-        :param category_ids: a list of category ids to filter.
-        :param account_ids: a list of account ids to filter.
-        :param tag_ids: a list of tag ids to filter.
-        :param has_attachments: a bool to filter for whether the transactions have attachments.
-        :param has_notes: a bool to filter for whether the transactions have notes.
-        :param hidden_from_reports: a bool to filter for whether the transactions are hidden from reports.
-        :param is_split: a bool to filter for whether the transactions are split.
-        :param is_recurring: a bool to filter for whether the transactions are recurring.
-        :param imported_from_mint: a bool to filter for whether the transactions were imported from mint.
-        :param synced_from_institution: a bool to filter for whether the transactions were synced from an institution.
+        :param transaction_id: the selected transaction id to get data from.
+        :param redirected_posted: unknown what this param does. likely redirects the ui.
+
         """
 
         query = gql(

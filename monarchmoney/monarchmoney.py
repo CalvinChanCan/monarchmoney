@@ -1299,6 +1299,172 @@ class MonarchMoney(object):
             operation="GetTransactionsList", graphql_query=query, variables=variables
         )
 
+    async def get_transaction(
+        self,
+        transaction_id: str,
+        redirected_posted: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Gets transaction data from the account.
+
+        :param limit: the maximum number of transactions to download, defaults to DEFAULT_RECORD_LIMIT.
+        :param offset: the number of transactions to skip (offset) before retrieving results.
+        :param start_date: the earliest date to get transactions from, in "yyyy-mm-dd" format.
+        :param end_date: the latest date to get transactions from, in "yyyy-mm-dd" format.
+        :param search: a string to filter transactions. use empty string for all results.
+        :param category_ids: a list of category ids to filter.
+        :param account_ids: a list of account ids to filter.
+        :param tag_ids: a list of tag ids to filter.
+        :param has_attachments: a bool to filter for whether the transactions have attachments.
+        :param has_notes: a bool to filter for whether the transactions have notes.
+        :param hidden_from_reports: a bool to filter for whether the transactions are hidden from reports.
+        :param is_split: a bool to filter for whether the transactions are split.
+        :param is_recurring: a bool to filter for whether the transactions are recurring.
+        :param imported_from_mint: a bool to filter for whether the transactions were imported from mint.
+        :param synced_from_institution: a bool to filter for whether the transactions were synced from an institution.
+        """
+
+        query = gql(
+            """
+        query GetTransactionDrawer($id: UUID!, $redirectPosted: Boolean) {
+            getTransaction(id: $id, redirectPosted: $redirectPosted) {
+                id
+                amount
+                pending
+                isRecurring
+                date
+                originalDate
+                hideFromReports
+                needsReview
+                reviewedAt
+                reviewedByUser {
+                    id
+                    name
+                    __typename
+                }
+                plaidName
+                notes
+                hasSplitTransactions
+                isSplitTransaction
+                isManual
+                splitTransactions {
+                    id
+                    ...TransactionDrawerSplitMessageFields
+                    __typename
+                }
+                originalTransaction {
+                    id
+                    ...OriginalTransactionFields
+                    __typename
+                }
+                attachments {
+                    id
+                    publicId
+                    extension
+                    sizeBytes
+                    filename
+                    originalAssetUrl
+                    __typename
+                }
+                account {
+                    id
+                    ...TransactionDrawerAccountSectionFields
+                    __typename
+                }
+                category {
+                    id
+                    __typename
+                }
+                goal {
+                    id
+                    __typename
+                }
+                merchant {
+                    id
+                    name
+                    transactionCount
+                    logoUrl
+                    recurringTransactionStream {
+                        id
+                        __typename
+                    }
+                    __typename
+                }
+                tags {
+                    id
+                    name
+                    color
+                    order
+                    __typename
+                }
+                needsReviewByUser {
+                    id
+                    __typename
+                }
+                __typename
+            }
+            myHousehold {
+                id
+                users {
+                    id
+                    name
+                    __typename
+                }
+                __typename
+            }
+        }
+        fragment TransactionDrawerSplitMessageFields on Transaction {
+            id
+            amount
+            merchant {
+                id
+                name
+                __typename
+            }
+            category {
+                id
+                icon
+                name
+                __typename
+            }
+            __typename
+        }
+        fragment OriginalTransactionFields on Transaction {
+            id
+            date
+            amount
+            merchant {
+                id
+                name
+                __typename
+            }
+            __typename
+        }
+        fragment TransactionDrawerAccountSectionFields on Account {
+            id
+            displayName
+            icon
+            logoUrl
+            id
+            mask
+            subtype {
+                display
+                __typename
+            }
+            __typename
+        }
+        """
+        )
+
+        variables = {
+            "id": transaction_id,
+            "redirected": redirected_posted,
+        }
+
+        return await self.gql_call(
+            operation="GetTransactionDrawer", graphql_query=query, variables=variables
+        )
+
     async def create_transaction(
         self,
         date: str,

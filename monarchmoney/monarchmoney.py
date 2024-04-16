@@ -175,6 +175,7 @@ class MonarchMoney(object):
             type {
               name
               display
+              group
               __typename
             }
             subtype {

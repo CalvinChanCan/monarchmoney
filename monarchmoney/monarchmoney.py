@@ -134,7 +134,7 @@ class MonarchMoney(object):
             self.load_session(self._session_file)
             return
 
-        if email is None or password is None:
+        if (email is None) or (password is None) or (email == "") or (password == ""):
             raise LoginFailedException(
                 "Email and password are required to login when not using a saved session."
             )
@@ -207,6 +207,7 @@ class MonarchMoney(object):
             type {
               name
               display
+              group
               __typename
             }
             subtype {
@@ -2841,6 +2842,16 @@ class MonarchMoney(object):
             data = pickle.load(fh)
             self.set_token(data["token"])
             self._headers["Authorization"] = f"Token {self._token}"
+
+    def delete_session(self, filename: Optional[str] = None) -> None:
+        """
+        Deletes the session file.
+        """
+        if filename is None:
+            filename = self._session_file
+
+        if os.path.exists(filename):
+            os.remove(filename)
 
     async def _login_user(
         self, email: str, password: str, mfa_secret_key: Optional[str]

@@ -1249,6 +1249,7 @@ class MonarchMoney(object):
             isRecurring
             reviewStatus
             needsReview
+            dataProviderDescription
             attachments {
               id
               extension

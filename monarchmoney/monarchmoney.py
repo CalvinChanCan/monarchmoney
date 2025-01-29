@@ -1613,6 +1613,66 @@ class MonarchMoney(object):
 
         return True
 
+    async def bulk_delete_transactions(self, selected_transaction_ids: List[str], account_ids: List[str], all_selected: bool = False) -> bool:
+        """
+        Deletes the given transaction.
+
+        :param transaction_id: the ID of the transaction targeted for deletion.
+        """
+        query = gql(
+            """
+            mutation Common_BulkDeleteTransactionsMutation(
+                $selectedTransactionIds: [ID!], 
+                $excludedTransactionIds: [ID!], 
+                $allSelected: Boolean!, 
+                $expectedAffectedTransactionCount: Int!, 
+                $filters: TransactionFilterInput
+            ) {
+                bulkDeleteTransactions(
+                    input: {
+                        selectedTransactionIds: $selectedTransactionIds, 
+                        excludedTransactionIds: $excludedTransactionIds, 
+                        isAllSelected: $allSelected, 
+                        expectedAffectedTransactionCount: $expectedAffectedTransactionCount, 
+                        filters: $filters}
+                ) {
+                    success
+                    affectedCount
+                    errors {
+                        message
+                        __typename
+                    }
+                    __typename
+                }
+            }
+            """
+        )
+
+        variables = {
+            'allSelected': all_selected,
+            'selectedTransactionIds': selected_transaction_ids,
+            'excludedTransactionIds': [],
+            'expectedAffectedTransactionCount': len(selected_transaction_ids),
+            'filters': {
+                'search': '',
+                'categories': [],
+                'accounts': account_ids,
+                'tags': [],
+            },
+        }
+
+        response = await self.gql_call(
+            operation="Common_BulkDeleteTransactionsMutation",
+            graphql_query=query,
+            variables=variables,
+        )
+
+        if not response["bulkDeleteTransactions"]["errors"]:
+            return True
+
+        return False
+
+
     async def get_transaction_categories(self) -> Dict[str, Any]:
         """
         Gets all the categories configured in the account.

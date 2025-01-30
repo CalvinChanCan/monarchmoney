@@ -155,6 +155,11 @@ class MonarchMoney(object):
         """
         Retrieves the response from the server for a given URL and form data.
         """
+
+        headers = self._headers.copy()
+        headers.pop("Accept", None)
+        headers.pop("Content-Type", None)
+
         async with ClientSession(headers=self._headers) as session:
             resp = await session.post(url, data=data)
             if resp.status != 200:
@@ -1616,7 +1621,12 @@ class MonarchMoney(object):
 
         return True
 
-    async def bulk_delete_transactions(self, selected_transaction_ids: List[str], account_ids: List[str], all_selected: bool = False) -> bool:
+    async def bulk_delete_transactions(
+        self,
+        selected_transaction_ids: List[str],
+        account_ids: List[str],
+        all_selected: bool = False,
+    ) -> bool:
         """
         Deletes the given transaction.
 
@@ -1652,15 +1662,15 @@ class MonarchMoney(object):
         )
 
         variables = {
-            'allSelected': all_selected,
-            'selectedTransactionIds': selected_transaction_ids,
-            'excludedTransactionIds': [],
-            'expectedAffectedTransactionCount': len(selected_transaction_ids),
-            'filters': {
-                'search': '',
-                'categories': [],
-                'accounts': account_ids,
-                'tags': [],
+            "allSelected": all_selected,
+            "selectedTransactionIds": selected_transaction_ids,
+            "excludedTransactionIds": [],
+            "expectedAffectedTransactionCount": len(selected_transaction_ids),
+            "filters": {
+                "search": "",
+                "categories": [],
+                "accounts": account_ids,
+                "tags": [],
             },
         }
 
@@ -1674,7 +1684,6 @@ class MonarchMoney(object):
             return True
 
         return False
-
 
     async def get_transaction_categories(self) -> Dict[str, Any]:
         """

@@ -80,7 +80,10 @@ class MonarchMoney(object):
         token: Optional[str] = None,
     ) -> None:
         self._headers = {
+            "Accept": "application/json",
             "Client-Platform": "web",
+            "Content-Type": "application/json",
+            "User-Agent": "MonarchMoneyAPI (https://github.com/hammem/monarchmoney)",
         }
         if token:
             self._headers["Authorization"] = f"Token {token}"

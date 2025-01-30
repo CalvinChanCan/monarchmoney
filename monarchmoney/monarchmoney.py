@@ -2935,7 +2935,7 @@ class MonarchMoney(object):
 
         async with ClientSession(headers=self._headers) as session:
             async with session.post(
-                MonarchMoneyEndpoints.getLoginEndpoint(), data=data
+                MonarchMoneyEndpoints.getLoginEndpoint(), json=data
             ) as resp:
                 if resp.status == 403:
                     raise RequireMFAException("Multi-Factor Auth Required")

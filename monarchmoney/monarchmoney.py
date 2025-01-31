@@ -160,7 +160,7 @@ class MonarchMoney(object):
         headers.pop("Accept", None)
         headers.pop("Content-Type", None)
 
-        async with ClientSession(headers=self._headers) as session:
+        async with ClientSession(headers=headers) as session:
             resp = await session.post(url, data=data)
             if resp.status != 200:
                 raise RequestFailedException(f"HTTP Code {resp.status}: {resp.reason}")

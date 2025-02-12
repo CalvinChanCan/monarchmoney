@@ -2937,6 +2937,8 @@ class MonarchMoney(object):
             "supports_mfa": True,
             "trusted_device": False,
             "username": email,
+            "supports_email_otp": True,
+            "supports_recaptcha": True,
         }
 
         if mfa_secret_key:

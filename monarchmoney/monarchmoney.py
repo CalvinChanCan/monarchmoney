@@ -2931,67 +2931,6 @@ class MonarchMoney(object):
             size_bytes=upload_response["bytes"],
         )
 
-    async def _initiate_upload_attachment_session(self, session_key: str) -> dict:
-        """
-        Triggers parsing of the uploaded balance history CSV file.
-
-        :param session_key: The session key for the uploaded file.
-        """
-
-        query = gql(
-            """
-            mutation Web_ParseUploadBalanceHistorySession($input: ParseBalanceHistoryInput!) {
-                parseBalanceHistory(input: $input) {
-                    uploadBalanceHistorySession {
-                        ...UploadBalanceHistorySessionFields
-                        __typename
-                    }
-                    __typename
-                }
-            }
-            fragment UploadBalanceHistorySessionFields on UploadBalanceHistorySession {
-                sessionKey
-                status
-                __typename
-            }
-            """
-        )
-
-        variables = {"input": {"sessionKey": session_key}}
-
-        return await self.gql_call(
-            "Web_ParseUploadBalanceHistorySession", query, variables
-        )
-
-    async def _is_upload_attachment_complete(self, session_key: str):
-        """
-        Retrieves the status of the upload balance history session.
-
-        :param session_key: The session key for the uploaded file.
-        """
-
-        query = gql(
-            """
-            query Web_GetUploadBalanceHistorySession($sessionKey: String!) {
-                uploadBalanceHistorySession(sessionKey: $sessionKey) {
-                    ...UploadBalanceHistorySessionFields
-                    __typename
-                }
-            }
-            fragment UploadBalanceHistorySessionFields on UploadBalanceHistorySession {
-                sessionKey
-                status
-                __typename
-            }
-            """
-        )
-
-        variables = {"sessionKey": session_key}
-
-        return await self.gql_call(
-            "Web_GetUploadBalanceHistorySession", query, variables
-        )
-
     async def get_recurring_transactions(
         self,
         start_date: Optional[str] = None,

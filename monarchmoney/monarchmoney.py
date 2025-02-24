@@ -1212,6 +1212,8 @@ class MonarchMoney(object):
         amount_filter: Optional[
             Tuple[AmountFilterType, Union[float, Tuple[float, float]]]
         ] = None,
+        is_credit: Optional[bool] = None,
+        is_debit: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         Gets transaction data from the account.
@@ -1232,6 +1234,8 @@ class MonarchMoney(object):
         :param imported_from_mint: a bool to filter for whether the transactions were imported from mint.
         :param synced_from_institution: a bool to filter for whether the transactions were synced from an institution.
         :param amount_filter: a tuple containing an AmountFilterType enum value and the amount or range of amounts to filter by.
+        :param is_credit: a bool to filter for only credit transactions.
+        :param is_debit: a bool to filter for only debit transactions.
         """
 
         query = gql(
@@ -1338,6 +1342,12 @@ class MonarchMoney(object):
 
         if synced_from_institution is not None:
             variables["filters"]["syncedFromInstitution"] = synced_from_institution
+
+        if is_credit is not None:
+            variables["filters"]["creditsOnly"] = is_credit
+
+        if is_debit is not None:
+            variables["filters"]["debitsOnly"] = is_debit
 
         if start_date and end_date:
             variables["filters"]["startDate"] = start_date
@@ -3096,6 +3106,7 @@ class MonarchMoney(object):
                 if resp.status == 403:
                     raise RequireMFAException("Multi-Factor Auth Required")
                 elif resp.status != 200:
+                    response = resp.json()
                     raise LoginFailedException(
                         f"HTTP Code {resp.status}: {resp.reason}"
                     )

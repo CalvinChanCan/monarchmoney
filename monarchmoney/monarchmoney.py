@@ -1219,6 +1219,7 @@ class MonarchMoney(object):
         ] = None,
         is_credit: Optional[bool] = None,
         is_debit: Optional[bool] = None,
+        is_untagged: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         Gets transaction data from the account.
@@ -1241,6 +1242,7 @@ class MonarchMoney(object):
         :param amount_filter: a tuple containing an AmountFilterType enum value and the amount or range of amounts to filter by.
         :param is_credit: a bool to filter for only credit transactions.
         :param is_debit: a bool to filter for only debit transactions.
+        :param is_debit: a bool to filter to include untagged transactions.
         """
 
         query = gql(
@@ -1353,6 +1355,9 @@ class MonarchMoney(object):
 
         if is_debit is not None:
             variables["filters"]["debitsOnly"] = is_debit
+
+        if is_untagged is not None:
+            variables["filters"]["isUntagged"] = is_untagged
 
         if start_date and end_date:
             variables["filters"]["startDate"] = start_date

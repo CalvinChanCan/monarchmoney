@@ -3116,9 +3116,10 @@ class MonarchMoney(object):
                 if resp.status == 403:
                     raise RequireMFAException("Multi-Factor Auth Required")
                 elif resp.status != 200:
-                    response = resp.json()
+                    response = await resp.json()
+                    detail = response["detail"]
                     raise LoginFailedException(
-                        f"HTTP Code {resp.status}: {resp.reason}"
+                        f"HTTP Code {resp.status}: {detail}"
                     )
 
                 response = await resp.json()

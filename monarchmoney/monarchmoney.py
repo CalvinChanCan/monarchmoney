@@ -3095,36 +3095,53 @@ class MonarchMoney(object):
         self, email: str, password: str, mfa_secret_key: Optional[str]
     ) -> None:
         """
-        Performs the initial login to a Monarch Money account.
+        Performs the initial login to a Monarch Money account with retry logic.
         """
-        data = {
-            "password": password,
-            "supports_mfa": True,
-            "trusted_device": False,
-            "username": email,
-            "supports_email_otp": True,
-            "supports_recaptcha": True,
-        }
+        max_attempts = 3
+        attempt = 0
 
-        if mfa_secret_key:
-            data["totp"] = oathtool.generate_otp(mfa_secret_key)
+        while attempt < max_attempts:
+            attempt += 1
+            data = {
+                "password": password,
+                "supports_mfa": True,
+                "trusted_device": False,
+                "username": email,
+                "supports_email_otp": True,
+                "supports_recaptcha": True,
+            }
 
-        async with ClientSession(headers=self._headers) as session:
-            async with session.post(
-                MonarchMoneyEndpoints.getLoginEndpoint(), json=data
-            ) as resp:
-                if resp.status == 403:
-                    raise RequireMFAException("Multi-Factor Auth Required")
-                elif resp.status != 200:
-                    response = await resp.json()
-                    detail = response["detail"]
-                    raise LoginFailedException(
-                        f"HTTP Code {resp.status}: {detail}"
+            if mfa_secret_key:
+                data["totp"] = oathtool.generate_otp(mfa_secret_key)
+
+            try:
+                async with ClientSession(headers=self._headers) as session:
+                    async with session.post(
+                        MonarchMoneyEndpoints.getLoginEndpoint(), json=data
+                    ) as resp:
+                        if resp.status == 403:
+                            raise RequireMFAException("Multi-Factor Auth Required")
+                        elif resp.status != 200:
+                            response = await resp.json()
+                            detail = response.get("detail", "Unknown error")
+                            raise LoginFailedException(
+                                f"HTTP Code {resp.status}: {detail}"
+                            )
+
+                        response = await resp.json()
+                        self.set_token(response["token"])
+                        self._headers["Authorization"] = f"Token {self._token}"
+                        return
+
+            except LoginFailedException as e:
+                if attempt < max_attempts:
+                    print(
+                        f"Login failed (attempt {attempt}), retrying in 30 seconds..."
                     )
-
-                response = await resp.json()
-                self.set_token(response["token"])
-                self._headers["Authorization"] = f"Token {self._token}"
+                    await asyncio.sleep(30)
+                else:
+                    print("Max login attempts reached.")
+                    raise
 
     async def _multi_factor_authenticate(
         self, email: str, password: str, code: str

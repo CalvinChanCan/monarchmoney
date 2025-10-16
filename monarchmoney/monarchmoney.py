@@ -46,7 +46,7 @@ class AmountFilterType(Enum):
 
 
 class MonarchMoneyEndpoints(object):
-    BASE_URL = "https://api.monarchmoney.com"
+    BASE_URL = "https://api.monarch.com"
     CLOUDINARY_BASE_URL = "https://api.cloudinary.com"
 
     @classmethod

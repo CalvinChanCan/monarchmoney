@@ -6,6 +6,7 @@ from unittest.mock import patch
 import json
 from gql import Client
 from monarchmoney import MonarchMoney
+from monarchmoney.monarchmoney import LoginFailedException
 
 
 class TestMonarchMoney(unittest.IsolatedAsyncioTestCase):
@@ -199,6 +200,47 @@ class TestMonarchMoney(unittest.IsolatedAsyncioTestCase):
             "Expected third holding name to be 'U S Dollar'",
         )
 
+    @patch.object(Client, "execute_async")
+    async def test_get_budgets(self, mock_execute_async):
+        """
+        Test the get_accounts method.
+        """
+        mock_execute_async.return_value = TestMonarchMoney.loadTestData(
+            filename="get_budgets.json",
+        )
+        result = await self.monarch_money.get_budgets(
+            start_date="2024-12-01", end_date="2025-2-31"
+        )
+        mock_execute_async.assert_called_once()
+        self.assertIsNotNone(result, "Expected result to not be None")
+        self.assertEqual(
+            len(result["budgetData"]["monthlyAmountsByCategory"]),
+            2,
+            "Expected 2 categories",
+        )
+        self.assertEqual(len(result["categoryGroups"]), 2, "Expected 2 category groups")
+        self.assertEqual(len(result["goalsV2"]), 1, "Expected 1 goal")
+
+    async def test_login(self):
+        """
+        Test the login method with empty values for email and password.
+        """
+        with self.assertRaises(LoginFailedException):
+            await self.monarch_money.login(use_saved_session=False)
+        with self.assertRaises(LoginFailedException):
+            await self.monarch_money.login(
+                email="", password="", use_saved_session=False
+            )
+
+    @patch("builtins.input", return_value="")
+    @patch("getpass.getpass", return_value="")
+    async def test_interactive_login(self, _input_mock, _getpass_mock):
+        """
+        Test the interactive_login method with empty values for email and password.
+        """
+        with self.assertRaises(LoginFailedException):
+            await self.monarch_money.interactive_login(use_saved_session=False)
+
     @classmethod
     def loadTestData(cls, filename) -> dict:
         filename = f"{os.path.dirname(os.path.realpath(__file__))}/{filename}"
@@ -210,7 +252,7 @@ class TestMonarchMoney(unittest.IsolatedAsyncioTestCase):
         Tear down any necessary data or variables for the tests here.
         This method will be called after each test method is executed.
         """
-        os.remove("temp_session.pickle")
+        self.monarch_money.delete_session("temp_session.pickle")
 
 
 if __name__ == "__main__":

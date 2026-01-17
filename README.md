@@ -1,4 +1,15 @@
-# Monarch Money
+<p align="center">
+  <img src=".github/assets/monarch-logo.svg" alt="Monarch Money Community logo" />
+</p>
+
+<blockquote style="border-left:4px solid #f1c40f; margin:16px 0; padding:8px 12px;">
+  <span style="color:#f1c40f;">&#9888;</span> <strong>Warning</strong><br />
+  This project was forked from https://github.com/hammem/monarchmoney and would not be possible without it.
+  The upstream fork is no longer maintained. This fork fixes issues that prevent the library from working today, including the Monarch Money domain change to `api.monarch.com`, auth persistence, and the `get_budget()` GraphQL query.
+  Moving forward, please report issues here.
+</blockquote>
+
+# Monarch Money Community
 
 Python library for accessing [Monarch Money](https://www.monarchmoney.com/referral/ngam2i643l) data.
 
@@ -8,11 +19,13 @@ Python library for accessing [Monarch Money](https://www.monarchmoney.com/referr
 
 Clone this repository from Git
 
-`git clone https://github.com/hammem/monarchmoney.git`
+`git clone https://github.com/bradleyseanf/monarchmoneycommunity.git`
 
 ## Via `pip`
 
-`pip install monarchmoney`
+`pip install monarchmoneycommunity`
+
+Import the library as `monarchmoney` after installation.
 # Instantiate & Login
 
 There are two ways to use this library: interactive and non-interactive.
@@ -134,13 +147,19 @@ As of writing this README, the following methods are supported:
 - `set_budget_amount` - sets a budget's value to the given amount (date allowed, will only apply to month specified by default). A zero amount value will "unset" or "clear" the budget for the given category.
 - `create_manual_account` - creates a new manual account
 - `delete_account` - deletes an account by the provided account id
-- `upload_account_balance_history` - uploads and parses account history csv file for a given account
+- `update_account` - updates settings and/or balance of the provided account id
+- `upload_account_balance_history` - uploads account history csv file for a given account
 
 # Contributing
 
 Any and all contributions -- code, documentation, feature requests, feedback -- are welcome!
 
-If you plan to submit up a pull request, you can expect a timely review.  There aren't any strict requirements around the environment you need to configure aside from using [Black](https://github.com/psf/black) to auto-format the code.  An action is configured in this repo to run against all PRs and merges and will block them from being committed.
+If you plan to submit up a pull request, you can expect a timely review.  There aren't any strict requirements around the environment you'll need.  Please ensure you do the following:
+
+  - Configure your IDE or manually run [Black](https://github.com/psf/black) to auto-format the code.
+  - Ensure you run the unit tests in this project!
+    
+Actions are configured in this repo to run against all PRs and merges which will block them if a unit test fails or Black throws an error.
 
 # FAQ
 
@@ -149,3 +168,9 @@ If you plan to submit up a pull request, you can expect a timely review.  There 
 If you currently use Google or 'Continue with Google' to access your Monarch account, you'll need to set a password to leverage this API.  You can set a password on your Monarch account by going to your [security settings](https://app.monarchmoney.com/settings/security).  
 
 Don't forget to use a password unique to your Monarch account and to enable multi-factor authentication!
+
+# Projects Using This Library
+
+*Disclaimer: These projects are neither affiliated nor endorsed by Monarch Money.*
+
+None yet, but please start an issue if you would like to add your project to this list.

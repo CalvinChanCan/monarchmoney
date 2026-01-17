@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from io import StringIO
+from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional, Union
 
 import oathtool
@@ -36,7 +37,7 @@ class BalanceHistoryRow:
 
 
 class MonarchMoneyEndpoints(object):
-    BASE_URL = "https://api.monarchmoney.com"
+    BASE_URL = "https://api.monarch.com"
 
     @classmethod
     def getLoginEndpoint(cls) -> str:
@@ -71,7 +72,10 @@ class MonarchMoney(object):
         token: Optional[str] = None,
     ) -> None:
         self._headers = {
+            "Accept": "application/json",
             "Client-Platform": "web",
+            "Content-Type": "application/json",
+            "User-Agent": "MonarchMoneyAPI (https://github.com/bradleyseanf/monarchmoneycommunity)",
         }
         if token:
             self._headers["Authorization"] = f"Token {token}"
@@ -79,6 +83,16 @@ class MonarchMoney(object):
         self._session_file = session_file
         self._token = token
         self._timeout = timeout
+
+    @staticmethod
+    def _looks_like_jwt(token: str) -> bool:
+        # Ably/features tokens are JWTs (header.payload.signature)
+        return isinstance(token, str) and token.count(".") == 2
+
+    @staticmethod
+    def _is_long_lived(token_expiration) -> bool:
+        # Monarch long-lived browser-style sessions return tokenExpiration = null/None
+        return token_expiration in (None, "null")
 
     @property
     def timeout(self) -> int:
@@ -125,7 +139,7 @@ class MonarchMoney(object):
             self.load_session(self._session_file)
             return
 
-        if email is None or password is None:
+        if (email is None) or (password is None) or (email == "") or (password == ""):
             raise LoginFailedException(
                 "Email and password are required to login when not using a saved session."
             )
@@ -134,10 +148,14 @@ class MonarchMoney(object):
             self.save_session(self._session_file)
 
     async def multi_factor_authenticate(
-        self, email: str, password: str, code: str
+        self, email: str, password: str, code: str, trusted_device: bool = True
     ) -> None:
-        """Performs multi-factor authentication to access a Monarch Money account."""
-        await self._multi_factor_authenticate(email, password, code)
+        """Performs multi-factor authentication to access a Monarch Money account.
+
+        Set trusted_device=True to request a long-lived token (browser-style session).
+        """
+        await self._multi_factor_authenticate(email, password, code, trusted_device)
+
 
     async def _upload_form_data(self, url: str, data: FormData) -> dict:
         """
@@ -193,7 +211,6 @@ class MonarchMoney(object):
             holdingsCount
             manualInvestmentsTrackingMethod
             order
-            icon
             logoUrl
             type {
               name
@@ -215,7 +232,6 @@ class MonarchMoney(object):
                 plaidInstitutionId
                 name
                 status
-                logo
                 __typename
               }
               __typename
@@ -223,7 +239,6 @@ class MonarchMoney(object):
             institution {
               id
               name
-              logo
               primaryColor
               url
               __typename
@@ -269,6 +284,114 @@ class MonarchMoney(object):
         return await self.gql_call(
             operation="GetAccountTypeOptions",
             graphql_query=query,
+        )
+
+    async def get_recent_account_balances(
+        self, start_date: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Retrieves the daily balance for all accounts starting from `start_date`.
+        `start_date` is an ISO formatted datestring, e.g. YYYY-MM-DD.
+        If `start_date` is None, then the last 31 days are requested.
+        """
+        if start_date is None:
+            start_date = (date.today() - timedelta(days=31)).isoformat()
+
+        query = gql(
+            """
+            query GetAccountRecentBalances($startDate: Date!) {
+                accounts {
+                    id
+                    recentBalances(startDate: $startDate)
+                    __typename
+                }
+            }
+        """
+        )
+        return await self.gql_call(
+            operation="GetAccountRecentBalances",
+            graphql_query=query,
+            variables={"startDate": start_date},
+        )
+
+    async def get_account_snapshots_by_type(self, start_date: str, timeframe: str):
+        """
+        Retrieves snapshots of the net values of all accounts of a given type, with either a yearly
+        monthly granularity.
+        `start_date` is an ISO datestring in the format YYYY-MM-DD, e.g. 2024-04-01,
+        containing the date to begin the snapshots from
+        `timeframe` is one of "year" or "month".
+
+        Note, `month` in the snapshot results is not a full ISO datestring, as it doesn't include the day.
+        Instead, it looks like, e.g., 2023-01
+        """
+        if timeframe not in ("year", "month"):
+            raise Exception(f'Unknown timeframe "{timeframe}"')
+
+        query = gql(
+            """
+            query GetSnapshotsByAccountType($startDate: Date!, $timeframe: Timeframe!) {
+                snapshotsByAccountType(startDate: $startDate, timeframe: $timeframe) {
+                    accountType
+                    month
+                    balance
+                    __typename
+                }
+                accountTypes {
+                    name
+                    group
+                    __typename
+                }
+            }
+        """
+        )
+        return await self.gql_call(
+            operation="GetSnapshotsByAccountType",
+            graphql_query=query,
+            variables={"startDate": start_date, "timeframe": timeframe},
+        )
+
+    async def get_aggregate_snapshots(
+        self,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        account_type: Optional[str] = None,
+    ) -> dict:
+        """
+        Retrieves the daily net value of all accounts, optionally between `start_date` and `end_date`,
+        and optionally only for accounts of type `account_type`.
+        Both `start_date` and `end_date` are ISO datestrings, formatted as YYYY-MM-DD
+        """
+        query = gql(
+            """
+            query GetAggregateSnapshots($filters: AggregateSnapshotFilters) {
+                aggregateSnapshots(filters: $filters) {
+                    date
+                    balance
+                    __typename
+                }
+            }
+        """
+        )
+
+        if start_date is None:
+            # The mobile app defaults to 150 years ago today
+            # The mobile app might have a leap year bug, so instead default to setting day=1
+            today = date.today()
+            start_date = date(
+                year=today.year - 150, month=today.month, day=1
+            ).isoformat()
+
+        return await self.gql_call(
+            operation="GetAggregateSnapshots",
+            graphql_query=query,
+            variables={
+                "filters": {
+                    "startDate": start_date,
+                    "endDate": end_date,
+                    "accountType": account_type,
+                }
+            },
         )
 
     async def create_manual_account(
@@ -329,6 +452,150 @@ class MonarchMoney(object):
             operation="Web_CreateManualAccount",
             graphql_query=query,
             variables=variables,
+        )
+
+    #
+    async def update_account(
+        self,
+        account_id: str,
+        account_name: Optional[str] = None,
+        account_balance: Optional[float] = None,
+        account_type: Optional[str] = None,
+        account_sub_type: Optional[str] = None,
+        include_in_net_worth: Optional[bool] = None,
+        hide_from_summary_list: Optional[bool] = None,
+        hide_transactions_from_reports: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """
+        Updates the details of an account.
+
+        With the exception of the account_balance parameter, the only available parameters currently are those
+        that are valid for both synced and manual accounts.
+
+        :param account_id: The string ID of the account to update
+        :param account_name: The string of the account name
+        :param account_balance: a float of the amount to update the account balance to
+        :param account_type: The string of account group type (i.e. loan, other_liability, other_asset, etc)
+        :param account_sub_type: The string sub type of the account (i.e. auto, commercial, mortgage, line_of_credit, etc)
+        :param include_in_net_worth: A boolean if the account should be considered in the net worth calculation
+        :param hide_from_summary_list: A boolean if the account should be hidden in the "Accounts" view
+        :param hide_transactions_from_reports: A boolean if the account should be excluded from budgets and reports
+        """
+        query = gql(
+            """
+            mutation Common_UpdateAccount($input: UpdateAccountMutationInput!) {
+                updateAccount(input: $input) {
+                    account {
+                        ...AccountFields
+                        __typename
+                    }
+                    errors {
+                        ...PayloadErrorFields
+                        __typename
+                    }
+                    __typename
+                }
+            }
+
+            fragment AccountFields on Account {
+                id
+                displayName
+                syncDisabled
+                deactivatedAt
+                isHidden
+                isAsset
+                mask
+                createdAt
+                updatedAt
+                displayLastUpdatedAt
+                currentBalance
+                displayBalance
+                includeInNetWorth
+                hideFromList
+                hideTransactionsFromReports
+                includeBalanceInNetWorth
+                includeInGoalBalance
+                dataProvider
+                dataProviderAccountId
+                isManual
+                transactionsCount
+                holdingsCount
+                manualInvestmentsTrackingMethod
+                order
+                icon
+                logoUrl
+                deactivatedAt
+                type {
+                    name
+                    display
+                    group
+                    __typename
+                }
+                subtype {
+                    name
+                    display
+                    __typename
+                }
+                credential {
+                    id
+                    updateRequired
+                    disconnectedFromDataProviderAt
+                    dataProvider
+                    institution {
+                        id
+                        plaidInstitutionId
+                        name
+                        status
+                        __typename
+                    }
+                    __typename
+                }
+                institution {
+                    id
+                    name
+                    primaryColor
+                    url
+                    __typename
+                }
+                __typename
+            }
+
+            fragment PayloadErrorFields on PayloadError {
+                fieldErrors {
+                    field
+                    messages
+                    __typename
+                }
+                message
+                code
+                __typename
+            }
+            """
+        )
+
+        variables = {
+            "id": str(account_id),
+        }
+
+        if account_type is not None:
+            variables["type"] = account_type
+        if account_sub_type is not None:
+            variables["subtype"] = account_sub_type
+        if include_in_net_worth is not None:
+            variables["includeInNetWorth"] = include_in_net_worth
+        if hide_from_summary_list is not None:
+            variables["hideFromList"] = hide_from_summary_list
+        if hide_transactions_from_reports is not None:
+            variables["hideTransactionsFromReports"] = hide_transactions_from_reports
+        if account_name is not None:
+            variables["name"] = account_name
+        if account_balance is not None:
+            variables["displayBalance"] = account_balance
+
+        return await self.gql_call(
+            operation="Common_UpdateAccount",
+            graphql_query=query,
+            variables={"input": variables},
         )
 
     async def delete_account(
@@ -421,7 +688,9 @@ class MonarchMoney(object):
 
         return True
 
-    async def is_accounts_refresh_complete(self) -> bool:
+    async def is_accounts_refresh_complete(
+        self, account_ids: Optional[List[str]] = None
+    ) -> bool:
         """
         Checks on the status of a prior request to refresh account balances.
 
@@ -430,6 +699,9 @@ class MonarchMoney(object):
           - False if refresh request still in progress.
 
         Otherwise, throws a `RequestFailedException`.
+
+        :param account_ids: The list of accounts IDs to check on the status of.
+          If set to None, all account IDs will be checked.
         """
         query = gql(
             """
@@ -452,7 +724,16 @@ class MonarchMoney(object):
         if "accounts" not in response:
             raise RequestFailedException("Unable to request status of refresh")
 
-        return all([not x["hasSyncInProgress"] for x in response["accounts"]])
+        if account_ids:
+            return all(
+                [
+                    not x["hasSyncInProgress"]
+                    for x in response["accounts"]
+                    if x["id"] in account_ids
+                ]
+            )
+        else:
+            return all([not x["hasSyncInProgress"] for x in response["accounts"]])
 
     async def request_accounts_refresh_and_wait(
         self,
@@ -479,7 +760,7 @@ class MonarchMoney(object):
         refreshed = False
         while not refreshed and (time.time() <= (start + timeout)):
             await asyncio.sleep(delay)
-            refreshed = await self.is_accounts_refresh_complete()
+            refreshed = await self.is_accounts_refresh_complete(account_ids)
         return refreshed
 
     async def get_account_holdings(self, account_id: int) -> Dict[str, Any]:
@@ -636,7 +917,6 @@ class MonarchMoney(object):
               holdingsCount
               manualInvestmentsTrackingMethod
               order
-              icon
               logoUrl
               type {
                 name
@@ -659,7 +939,6 @@ class MonarchMoney(object):
                   plaidInstitutionId
                   name
                   status
-                  logo
                   __typename
                 }
                 __typename
@@ -667,7 +946,6 @@ class MonarchMoney(object):
               institution {
                 id
                 name
-                logo
                 primaryColor
                 url
                 __typename
@@ -740,7 +1018,6 @@ class MonarchMoney(object):
               category {
                 id
                 name
-                icon
                 group {
                   id
                   type
@@ -828,7 +1105,6 @@ class MonarchMoney(object):
               institution {
                 id
                 name
-                logo
                 url
                 __typename
               }
@@ -857,7 +1133,6 @@ class MonarchMoney(object):
               updateRequired
               institution {
                 hasIssuesReported
-                logo
                 status
                 balanceStatus
                 transactionsStatus
@@ -891,13 +1166,13 @@ class MonarchMoney(object):
         :param end_date:
             the latest date to get budget data, in "yyyy-mm-dd" format (default: next month)
         :param use_legacy_goals:
-            Set True to return a list of monthly budget set aside for goals (default: no list)
+            Deprecated; legacy goals are no longer supported by the API.
         :param use_v2_goals:
             Set True to return a list of monthly budget set aside for version 2 goals (default list)
         """
         query = gql(
             """
-          query GetJointPlanningData($startDate: Date!, $endDate: Date!, $useLegacyGoals: Boolean!, $useV2Goals: Boolean!) {
+          query GetJointPlanningData($startDate: Date!, $endDate: Date!, $useV2Goals: Boolean!) {
             budgetData(startMonth: $startDate, endMonth: $endDate) {
               monthlyAmountsByCategory {
                 category {
@@ -1001,7 +1276,6 @@ class MonarchMoney(object):
               categories {
                 id
                 name
-                icon
                 order
                 budgetVariability
                 rolloverPeriod {
@@ -1013,30 +1287,6 @@ class MonarchMoney(object):
                 __typename
               }
               type
-              __typename
-            }
-            goals @include(if: $useLegacyGoals) {
-              id
-              name
-              icon
-              completedAt
-              targetDate
-              __typename
-            }
-            goalMonthlyContributions(startDate: $startDate, endDate: $endDate) @include(if: $useLegacyGoals) {
-              mount: monthlyContribution
-              startDate
-              goalId
-              __typename
-            }
-            goalPlannedContributions(startDate: $startDate, endDate: $endDate) @include(if: $useLegacyGoals) {
-              id
-              amount
-              startDate
-              goal {
-                id
-                __typename
-              }
               __typename
             }
             goalsV2 @include(if: $useV2Goals) {
@@ -1068,7 +1318,6 @@ class MonarchMoney(object):
         variables = {
             "startDate": start_date,
             "endDate": end_date,
-            "useLegacyGoals": use_legacy_goals,
             "useV2Goals": use_v2_goals,
         }
 
@@ -1250,7 +1499,6 @@ class MonarchMoney(object):
             category {
               id
               name
-              icon
               __typename
             }
             merchant {
@@ -1447,7 +1695,6 @@ class MonarchMoney(object):
             id
             order
             name
-            icon
             systemCategory
             isSystemCategory
             isDisabled
@@ -1588,7 +1835,6 @@ class MonarchMoney(object):
                 id
                 order
                 name
-                icon
                 systemCategory
                 systemCategoryDisplayName
                 budgetVariability
@@ -1855,7 +2101,6 @@ class MonarchMoney(object):
             }
             category {
               id
-              icon
               name
               __typename
             }
@@ -1877,7 +2122,6 @@ class MonarchMoney(object):
           fragment TransactionDrawerAccountSectionFields on Account {
             id
             displayName
-            icon
             logoUrl
             id
             mask
@@ -1914,7 +2158,6 @@ class MonarchMoney(object):
               category {
                 id
                 name
-                icon
                 __typename
               }
               merchant {
@@ -1931,7 +2174,6 @@ class MonarchMoney(object):
                 }
                 category {
                   id
-                  icon
                   name
                   __typename
                 }
@@ -1986,7 +2228,6 @@ class MonarchMoney(object):
                   }
                   category {
                     id
-                    icon
                     name
                     __typename
                   }
@@ -2043,7 +2284,6 @@ class MonarchMoney(object):
                 category {
                   id
                   name
-                  icon
                   group {
                     id
                     type
@@ -2569,13 +2809,11 @@ class MonarchMoney(object):
                 category {
                   id
                   name
-                  icon
                   __typename
                 }
                 account {
                   id
                   displayName
-                  icon
                   logoUrl
                   __typename
                 }
@@ -2632,22 +2870,33 @@ class MonarchMoney(object):
         Makes a GraphQL call to Monarch Money's API.
         """
         return await self._get_graphql_client().execute_async(
-            document=graphql_query, operation_name=operation, variable_values=variables
+            request=graphql_query, variable_values=variables, operation_name=operation
         )
 
     def save_session(self, filename: Optional[str] = None) -> None:
         """
         Saves the auth token needed to access a Monarch Money account.
+        Never persists short-lived features JWTs (1-hour).
         """
         if filename is None:
             filename = self._session_file
         filename = os.path.abspath(filename)
 
-        session_data = {"token": self._token}
+        if not self._token:
+            raise LoginFailedException("No token set; cannot save session.")
 
+        # Guard: features/Ably JWTs have two dots and expire hourly.
+        if isinstance(self._token, str) and self._token.count(".") == 2:
+            raise LoginFailedException(
+                "Refusing to save a JWT-style token to session; this looks like the 1-hour "
+                "features token, not the long-lived login session token."
+            )
+
+        session_data = {"token": self._token}
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, "wb") as fh:
             pickle.dump(session_data, fh)
+
 
     def load_session(self, filename: Optional[str] = None) -> None:
         """
@@ -2661,66 +2910,134 @@ class MonarchMoney(object):
             self.set_token(data["token"])
             self._headers["Authorization"] = f"Token {self._token}"
 
+    def delete_session(self, filename: Optional[str] = None) -> None:
+        """
+        Deletes the session file.
+        """
+        if filename is None:
+            filename = self._session_file
+
+        if os.path.exists(filename):
+            os.remove(filename)
+
     async def _login_user(
-        self, email: str, password: str, mfa_secret_key: Optional[str]
+      self, email: str, password: str, mfa_secret_key: Optional[str]
     ) -> None:
-        """
-        Performs the initial login to a Monarch Money account.
-        """
-        data = {
-            "password": password,
-            "supports_mfa": True,
-            "trusted_device": False,
-            "username": email,
-        }
+      """
+      Performs the initial login to a Monarch Money account.
+      Requires/persists only the long-lived login token (NOT the 1-hour features JWT).
+      """
+      data = {
+          "password": password,
+          "supports_mfa": True,
+          "trusted_device": True,
+          "username": email,
+      }
+      if mfa_secret_key:
+          data["totp"] = oathtool.generate_otp(mfa_secret_key)
 
-        if mfa_secret_key:
-            data["totp"] = oathtool.generate_otp(mfa_secret_key)
+      async with ClientSession(headers=self._headers) as session:
+          async with session.post(
+              MonarchMoneyEndpoints.getLoginEndpoint(), json=data
+          ) as resp:
+              if resp.status == 403:
+                  # Server demands MFA
+                  raise RequireMFAException("Multi-Factor Auth Required")
+              if resp.status != 200:
+                  # Surface server message if present
+                  try:
+                      response = await resp.json()
+                      if "detail" in response:
+                          raise LoginFailedException(response["detail"])
+                      if "error_code" in response:
+                          raise LoginFailedException(response["error_code"])
+                      raise LoginFailedException(f"Unrecognized error: {response}")
+                  except Exception:
+                      raise LoginFailedException(
+                          f"HTTP Code {resp.status}: {resp.reason}"
+                      )
 
-        async with ClientSession(headers=self._headers) as session:
-            async with session.post(
-                MonarchMoneyEndpoints.getLoginEndpoint(), data=data
-            ) as resp:
-                if resp.status == 403:
-                    raise RequireMFAException("Multi-Factor Auth Required")
-                elif resp.status != 200:
-                    raise LoginFailedException(
-                        f"HTTP Code {resp.status}: {resp.reason}"
-                    )
+              response = await resp.json()
+              tok = response.get("token")
+              tokexp = response.get("tokenExpiration")
 
-                response = await resp.json()
-                self.set_token(response["token"])
-                self._headers["Authorization"] = f"Token {self._token}"
+              if not tok:
+                  raise LoginFailedException("Login succeeded but no token returned.")
+              # Reject 1-hour features/Ably JWTs (they look like header.payload.signature)
+              if isinstance(tok, str) and tok.count(".") == 2:
+                  raise LoginFailedException(
+                      "Received a JWT-style token (likely 1-hour features token). "
+                      "Refusing to save; ensure we are using /auth/login/ token."
+                  )
+              # Long-lived browser-style sessions come with tokenExpiration == null
+              if tokexp not in (None, "null"):
+                  raise LoginFailedException(
+                      f"Short-lived token returned (tokenExpiration={tokexp}). "
+                      "Retry with trusted_device=True or complete MFA as trusted device."
+                  )
 
+              self.set_token(tok)
+              self._headers["Authorization"] = f"Token {self._token}"
+        
     async def _multi_factor_authenticate(
-        self, email: str, password: str, code: str
+        self,
+        email: str,
+        password: str,
+        code: Optional[str] = None,
+        trusted_device: bool = True,
     ) -> None:
         """
         Performs the MFA step of login.
+        Requires/persists only the long-lived login token (NOT the 1-hour features JWT).
         """
+
         data = {
             "password": password,
             "supports_mfa": True,
             "totp": code,
-            "trusted_device": False,
+            "trusted_device": bool(trusted_device),  # request trusted device token
             "username": email,
         }
 
         async with ClientSession(headers=self._headers) as session:
             async with session.post(
-                MonarchMoneyEndpoints.getLoginEndpoint(), data=data
+                MonarchMoneyEndpoints.getLoginEndpoint(), json=data
             ) as resp:
                 if resp.status != 200:
-                    response = await resp.json()
-                    error_message = (
-                        response["error_code"]
-                        if response is not None
-                        else "Unknown error"
-                    )
-                    raise LoginFailedException(error_message)
+                    try:
+                        response = await resp.json()
+                        if "detail" in response:
+                            raise RequireMFAException(response["detail"])
+                        if "error_code" in response:
+                            raise LoginFailedException(response["error_code"])
+                        raise LoginFailedException(f"Unrecognized error: {response}")
+                    except Exception:
+                        raise LoginFailedException(
+                            f"HTTP Code {resp.status}: {resp.reason}"
+                        )
 
                 response = await resp.json()
-                self.set_token(response["token"])
+                tok = response.get("token")
+                tokexp = response.get("tokenExpiration")
+
+                if not tok:
+                    raise LoginFailedException("MFA succeeded but no token returned.")
+
+                # Reject 1-hour features/Ably JWTs (look like header.payload.signature)
+                if isinstance(tok, str) and tok.count(".") == 2:
+                    raise LoginFailedException(
+                        "Received a JWT-style token (likely 1-hour features token). "
+                        "Refusing to save; ensure this is the /auth/login/ token."
+                    )
+
+                # Must be long-lived (tokenExpiration == null)
+                if tokexp not in (None, "null"):
+                    raise LoginFailedException(
+                        f"MFA returned short-lived token (tokenExpiration={tokexp}). "
+                        "Make sure trusted_device=True when performing MFA."
+                    )
+
+                self.set_token(tok)
                 self._headers["Authorization"] = f"Token {self._token}"
 
     def _get_graphql_client(self) -> Client:

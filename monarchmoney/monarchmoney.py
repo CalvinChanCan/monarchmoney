@@ -66,6 +66,10 @@ class MonarchMoneyEndpoints(object):
     def getAttachmentUploadEndpoint(cls) -> str:
         return cls.CLOUDINARY_BASE_URL + "/v1_1/monarch-money/image/upload/"
 
+    @classmethod
+    def getStatementUploadAsyncEndpoint(cls) -> str:
+        return cls.BASE_URL + "/statements/upload-async/"
+
 
 class RequireMFAException(Exception):
     pass
@@ -2950,6 +2954,173 @@ class MonarchMoney(object):
             public_id=upload_response["public_id"],
             extension=upload_response["format"],
             size_bytes=upload_response["bytes"],
+        )
+
+    async def upload_statement(
+        self,
+        account_id: str,
+        csv_content: str,
+        parser_name: str = 'mint_csv',
+        tag_mapping: str = "{}",
+        category_mapping: str = "{}",
+        delay: int = DELAY,
+        timeout: int = TIMEOUT,
+    ) -> bool:
+        """
+        Uploads a transactions statement to Monarch Money. This requires the file to be in a specific format.
+
+        :param account_id: The Monarch account ID that the statement should be imported into.
+        :param csv_content: The CSV statement content to upload.
+        :param parser_name: The Monarch parser name to use when starting the statement import session.
+        :param delay: The number of seconds to wait between polling attempts.
+        :param timeout: The maximum number of seconds to wait for the import to complete.
+        :return: True when the statement import completes successfully, otherwise False.
+        """
+
+        if not account_id or not csv_content:
+            raise RequestFailedException("account_id and csv_content cannot be empty")
+
+        filename = "upload.csv"
+        form = FormData()
+        # Match the multipart payload used by Monarch's statement import UI.
+        form.add_field("file", csv_content, filename=filename, content_type="text/csv")
+        form.add_field("", "false")
+
+        upload_response = await self._upload_form_data(
+            url=MonarchMoneyEndpoints.getStatementUploadAsyncEndpoint(),
+            data=form,
+        )
+
+        session_key = upload_response["session_key"]
+
+        parse_response = await self._initiate_upload_statement_session(
+            parser_name=parser_name,
+            session_key=session_key,
+            account_id=account_id,
+            tag_mapping=tag_mapping,
+            category_mapping=category_mapping
+        )
+
+        is_completed = (
+            parse_response["parseUploadStatementSession"]["uploadStatementSession"][
+                "status"
+            ]
+            == "completed"
+        )
+
+        start = time.time()
+        while not is_completed and (time.time() <= (start + timeout)):
+            await asyncio.sleep(delay)
+
+            is_completed = (
+                await self._is_upload_statement_complete(session_key)
+            )["uploadStatementSession"]["status"] == "completed"
+
+        return is_completed
+
+
+    async def _initiate_upload_statement_session(
+        self,
+        parser_name: str,
+        session_key: str,
+        account_id: str,
+        skip_check_for_duplicates: bool = True,
+        should_update_balance: bool = True,
+        allow_warnings: bool = False,
+        tag_mapping: str = "{}",
+        category_mapping: str = "{}",
+        columnMapping: str = '{"date":0,"merchant_name":1,"category":2,"data_provider_description":4,"notes":5,"amount":6,"tags":7}'
+    ) -> dict:
+        """
+        Triggers parsing of the uploaded statement CSV file.
+
+        :param parser_name: The Monarch parser name to use for the uploaded statement.
+        :param session_key: The upload session key returned by the statement upload endpoint.
+        :param account_id: The Monarch account ID that the imported transactions should be assigned to.
+        :param skip_check_for_duplicates: Whether to skip checking for duplicate transactions. If set to False, this will overwrite existing transcations
+        :param should_update_balance: Whether to update the account balance after importing transactions.
+        :param allow_warnings: Whether to allow warnings during the import process.
+        :param tag_mapping: A JSON string describing how imported tags should be mapped.
+        :param category_mapping: A JSON string describing how imported categories should be mapped.
+        :param columnMapping: A JSON string mapping CSV column indexes to Monarch statement fields.
+        :return: The GraphQL response for the parseUploadStatementSession mutation.
+        """
+
+        query = gql(
+            """
+            mutation Web_ParseUploadStatementSession($input: ParseStatementInput!) {
+                parseUploadStatementSession(input: $input) {
+                    uploadStatementSession {
+                        ...UploadStatementSessionFields
+                        __typename
+                    }
+                    __typename
+                    }
+                }
+            fragment UploadStatementSessionFields on UploadStatementSession {
+                sessionKey
+                status
+                errorMessage
+                skipCheckForDuplicates
+                uploadedStatement {
+                    id
+                    transactionCount
+                    __typename
+                }
+                __typename
+            }
+            """
+        )
+
+
+        variables = {
+            "input": {
+                "parserName": parser_name,
+                "sessionKey": session_key,
+                "importPriority": 'all_transactions',
+                "accountId": account_id,
+                "tagMapping": tag_mapping,
+                'categoryMapping': category_mapping,
+                "skipCheckForDuplicates": skip_check_for_duplicates,
+                "shouldUpdateBalance": should_update_balance,
+                "allowWarnings": allow_warnings,
+                'columnMapping': columnMapping,
+            }
+        }
+
+        return await self.gql_call(
+            "Web_ParseUploadStatementSession", query, variables
+        )
+
+
+    async def _is_upload_statement_complete(self, session_key: str):
+
+        query = gql(
+            """
+            query GetUploadStatementSession($sessionKey: String!) {
+                uploadStatementSession(sessionKey: $sessionKey) {
+                    ...UploadStatementSessionFields
+                    __typename}
+                }
+            fragment UploadStatementSessionFields on UploadStatementSession {
+                sessionKey
+                status
+                errorMessage
+                skipCheckForDuplicates
+                uploadedStatement {
+                    id
+                    transactionCount
+                    __typename
+                }
+                __typename
+            }
+            """
+        )
+
+        variables = {"sessionKey": session_key}
+
+        return await self.gql_call(
+            "GetUploadStatementSession", query, variables
         )
 
     async def get_recurring_transactions(

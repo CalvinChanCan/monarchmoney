@@ -305,6 +305,48 @@ class MonarchMoney(object):
             graphql_query=query,
         )
 
+    async def get_merchants(
+        self,
+        search: str = "",
+        order_by: str = "TRANSACTION_COUNT",
+        offset: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Retrieves merchants from the Monarch Money settings data.
+
+        :param search: Optional merchant name search string.
+        :param order_by: The merchant ordering to use, for example ``TRANSACTION_COUNT``.
+        :param offset: Optional number of merchant rows to skip before retrieving results.
+        :return: The GraphQL response containing merchants and merchantCount.
+        """
+        query = gql(
+            """
+            query Web_GetMerchantSettingsPage($offset: Int, $orderBy: MerchantOrdering, $search: String) {
+                merchants(offset: $offset, orderBy: $orderBy, search: $search) {
+                    id
+                    name
+                    transactionCount
+                    createdAt
+                    logoUrl
+                    __typename
+                }
+                merchantCount
+            }
+            """
+        )
+
+        variables = {
+            "offset": offset,
+            "orderBy": order_by,
+            "search": search,
+        }
+
+        return await self.gql_call(
+            operation="Web_GetMerchantSettingsPage",
+            graphql_query=query,
+            variables=variables,
+        )
+
     async def create_manual_account(
         self,
         account_type: str,

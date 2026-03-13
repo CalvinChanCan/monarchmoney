@@ -1315,6 +1315,7 @@ class MonarchMoney(object):
             amount
             pending
             date
+            originalDate
             hideFromReports
             plaidName
             notes
@@ -1334,6 +1335,9 @@ class MonarchMoney(object):
             isSplitTransaction
             createdAt
             updatedAt
+            deletedAt
+            externalId
+            isManual
             category {
               id
               name

@@ -2203,6 +2203,112 @@ class MonarchMoney(object):
             graphql_query=query,
         )
 
+    async def bulk_update_transactions(
+        self,
+        selected_transaction_ids: Optional[List[str]] = None,
+        updates: Optional[Dict[str, Any]] = None,
+        excluded_transaction_ids: Optional[List[str]] = None,
+        all_selected: bool = False,
+        expected_affected_transaction_count: Optional[int] = None,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Updates multiple existing transactions.
+
+        :param selected_transaction_ids:
+            The transaction IDs to update. If all_selected is True, these are included in
+            the selected transaction set along with any transactions matching filters.
+        :param updates:
+            The fields to update, using Monarch's TransactionUpdateParams shape.
+            Examples: {"categoryId": "123"}, {"tags": ["456"]},
+            {"categoryId": "123", "tags": ["456"]}.
+        :param excluded_transaction_ids:
+            Transaction IDs to exclude from the update.
+        :param all_selected:
+            Whether Monarch should update all transactions matching filters, except
+            excluded_transaction_ids.
+        :param expected_affected_transaction_count:
+            The number of transactions Monarch should update. If omitted and
+            all_selected is False, this defaults to len(selected_transaction_ids).
+        :param filters:
+            Transaction filters used when all_selected is True, or to match the web app's
+            bulk update request shape. Example:
+            {
+                "accounts": ["237820368858848518"],
+                "transactionVisibility": "all_transactions",
+            }.
+        """
+        query = gql(
+            """
+          mutation Common_BulkUpdateTransactionsMutation(
+            $selectedTransactionIds: [ID!],
+            $excludedTransactionIds: [ID!],
+            $allSelected: Boolean!,
+            $expectedAffectedTransactionCount: Int!,
+            $updates: TransactionUpdateParams!,
+            $filters: TransactionFilterInput
+          ) {
+            bulkUpdateTransactions(
+              selectedTransactionIds: $selectedTransactionIds
+              excludedTransactionIds: $excludedTransactionIds
+              updates: $updates
+              allSelected: $allSelected
+              expectedAffectedTransactionCount: $expectedAffectedTransactionCount
+              filters: $filters
+            ) {
+              success
+              affectedCount
+              errors {
+                message
+                __typename
+              }
+              __typename
+            }
+          }
+        """
+        )
+
+        if selected_transaction_ids is None:
+            selected_transaction_ids = []
+        if excluded_transaction_ids is None:
+            excluded_transaction_ids = []
+        if updates is None:
+            updates = {}
+
+        if not selected_transaction_ids and not all_selected:
+            raise RequestFailedException(
+                "selected_transaction_ids must be provided unless all_selected is True"
+            )
+        if not updates:
+            raise RequestFailedException("updates cannot be empty")
+        if expected_affected_transaction_count is None:
+            if all_selected:
+                raise RequestFailedException(
+                    "expected_affected_transaction_count is required when "
+                    "all_selected is True"
+                )
+            expected_affected_transaction_count = len(selected_transaction_ids)
+
+        variables = {
+            "selectedTransactionIds": selected_transaction_ids,
+            "excludedTransactionIds": excluded_transaction_ids,
+            "allSelected": all_selected,
+            "expectedAffectedTransactionCount": expected_affected_transaction_count,
+            "updates": updates,
+            "filters": filters,
+        }
+
+        response = await self.gql_call(
+            operation="Common_BulkUpdateTransactionsMutation",
+            variables=variables,
+            graphql_query=query,
+        )
+
+        if not response["bulkUpdateTransactions"]["success"]:
+            raise RequestFailedException(response["bulkUpdateTransactions"]["errors"])
+
+        return response
+
     async def set_budget_amount(
         self,
         amount: float,
